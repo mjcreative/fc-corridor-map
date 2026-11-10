@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Freedom-Wilkinson Corridor Map</title>
+<meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
@@ -17,28 +18,24 @@
    Paste the Google Sheet's link between the quotes (Share → Anyone with the link → Viewer).
    Leave as '' to use the built-in data instead.            */
 window.SHEET_URL = '';
-/* The four pillars: map legend + cards below the map. Add each "Learn More" link between the quotes. */
+/* The four pillars (map legend). "slug" is the word used in Squarespace links, e.g. #map-housing */
 window.PILLARS = [
-  { name: 'Family Stability & Wellbeing', icon: 'health', link: '',
-    text: 'Empowering families toward sustainable self-sufficiency through year-round coaching, skills workshops, and holistic wraparound support.' },
-  { name: 'Youth Development & Education', icon: 'education', link: '',
-    text: 'Advancing early literacy and academic success by bolstering teachers, expanding quality classrooms, and equipping families with key learning tools.' },
-  { name: 'Employment & Economic Empowerment', icon: 'employment', link: '',
-    text: 'Equipping local entrepreneurs with affordable workspaces, capital micro-grants, hands-on mentorship, and collaborative monthly trainings.' },
-  { name: 'Affordable Housing', icon: 'housing', link: '',
-    text: 'Building mixed-income residences, safeguarding existing affordable units, and opening pathways to homeownership.' }
+  { name: 'Family Stability & Wellbeing', slug: 'family', icon: 'health' },
+  { name: 'Youth Development & Education', slug: 'youth', icon: 'education' },
+  { name: 'Employment & Economic Empowerment', slug: 'employment', icon: 'employment' },
+  { name: 'Affordable Housing', slug: 'housing', icon: 'housing-green' }
 ];
 </script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Source Sans 3', sans-serif; color: #111; background: #fff; }
   a { color: #0B5E8A; } a:hover { color: #F28200; }
-  .wrap { display: flex; flex-direction: column; gap: 28px; padding: 32px 24px; max-width: 1280px; margin: 0 auto; }
-  .head { display: flex; flex-direction: column; gap: 12px; max-width: 860px; }
-  .mapbox { position: relative; width: 100%; height: 640px; max-height: 80vh; border: 2px solid #111; border-radius: 16px; overflow: hidden; }
+  html, body { height: 100%; }
+  .wrap { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 480px; padding: 2px; }
+  .mapbox { position: relative; flex: 1; min-height: 360px; border: 2px solid #111; border-radius: 16px; overflow: hidden; }
   #map { position: absolute; inset: 0; background: #f2f2f2; }
   .osm { filter: grayscale(1) contrast(.9) brightness(1.06); }
-  .far .pin { transform: scale(.55); } .far .pin.sel { transform: scale(.8); }
+  .far .pin { transform: scale(.65); } .far .pin.sel { transform: scale(.9); }
   .far .pinlabel { top: auto; bottom: 80%; transform: translate(-50%, -4px); }
   .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #555; }
   h1 { margin: 0; font-size: 40px; line-height: 1.1; font-weight: 800; text-wrap: balance; }
@@ -55,9 +52,10 @@ window.PILLARS = [
   .card .desc { font-size: 15px; line-height: 1.45; color: #222; white-space: pre-line; text-wrap: pretty; }
   .card .photo { width: 100%; border-radius: 8px; border: 1px solid #ddd; cursor: zoom-in; display: block; }
   .card .x { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: #f1f1f1; font: 700 18px/1 sans-serif; cursor: pointer; }
-  .pin { width: 48px; height: 48px; transition: transform .15s; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .pin { width: 58px; height: 58px; transition: transform .15s; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .pin { background: #fff; border-radius: 50%; padding: 5px; box-shadow: 0 1px 4px rgba(0,0,0,.28); }
   .pin img { width: 100%; height: 100%; object-fit: contain; }
-  .pin.big { width: 60px; height: 60px; }
+  .pin.big { width: 70px; height: 70px; }
   .off { position: relative; width: 100%; height: 100%; transition: transform .2s; }
   .shield { transform: translate(-50%, -50%); width: max-content; }
   .area-lbl { transform: translate(-50%, -50%); width: max-content; font: 800 13px/1.2 'Source Sans 3', sans-serif; letter-spacing: .6px; text-transform: uppercase; text-align: center; color: #111; pointer-events: none; }
@@ -66,13 +64,15 @@ window.PILLARS = [
   .pin.sel { transform: scale(1.25); }
   .pinlabel { font: 800 11px 'Source Sans 3', sans-serif; letter-spacing: .6px; white-space: nowrap; background: #fff; border: 1.5px solid #111; border-radius: 999px; padding: 1px 8px; position: absolute; left: 50%; top: 100%; transform: translate(-50%, 4px); }
   .zip-lbl { transform: translate(-50%, -50%); width: max-content; font: 800 12px 'Source Sans 3', sans-serif; letter-spacing: .8px; color: #4B3A8F; background: #fff; border: 1.5px dashed #4B3A8F; border-radius: 999px; padding: 2px 10px; pointer-events: none; }
-  .mlegend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 16px; padding: 0 4px; }
+  .mlegend { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 0 10px; padding: 0 4px; }
+  .mlegend::-webkit-scrollbar { display: none; }
+  .mlegend .sep { width: 1px; height: 18px; background: #DDD; flex: none; }
   .mlegend .lt { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #555; }
-  .lg { display: flex; align-items: center; gap: 6px; font: 600 13px/1.2 'Source Sans 3', sans-serif; color: #111; background: none; border: 0; padding: 2px 6px; margin: 0 -6px; border-radius: 6px; text-align: left; min-height: 30px; white-space: nowrap; }
+  .lg { display: flex; align-items: center; gap: 6px; font: 600 12.5px/1.2 'Source Sans 3', sans-serif; color: #111; background: none; border: 0; padding: 2px 5px; margin: 0 -5px; flex: none; border-radius: 6px; text-align: left; min-height: 30px; white-space: nowrap; }
   button.lg { cursor: pointer; } button.lg:hover { background: #F4F4F4; } button.lg[aria-pressed="true"] { background: #FFE2BF; }
-  .lg img { width: 22px; height: 22px; object-fit: contain; flex: none; }
-  .zsw { width: 26px; height: 14px; border: 2px dashed #4B3A8F; border-radius: 3px; flex: none; }
-  .asw { width: 26px; height: 14px; border: 3px solid #F28200; background: rgba(242,130,0,.16); border-radius: 3px; flex: none; }
+  .lg img { width: 18px; height: 18px; object-fit: contain; flex: none; }
+  .zsw { width: 18px; height: 12px; border: 2px dashed #4B3A8F; border-radius: 3px; flex: none; }
+  .asw { width: 18px; height: 12px; border: 3px solid #F28200; background: rgba(242,130,0,.16); border-radius: 3px; flex: none; }
   .pillars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
   .pillar { display: flex; flex-direction: column; gap: 12px; padding: 22px 20px; border: 2px solid #111; border-radius: 14px; background: #fff; cursor: pointer; transition: background .2s, opacity .2s, box-shadow .2s; }
   .pillar:hover { background: #FAFAFA; }
@@ -89,24 +89,16 @@ window.PILLARS = [
   .lb { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
   .lb.on { display: flex; } .lb img { max-width: 100%; max-height: 100%; border-radius: 8px; }
   .note { font-size: 13px; color: #666; }
-  @media (max-width: 960px) { .pillars { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 520px) { .pillars { grid-template-columns: 1fr; } }
-  @media (max-width: 700px) { .wrap { padding: 16px 12px; gap: 20px; } h1 { font-size: 30px; } .mapbox { height: 72vh; } .mlegend { padding: 8px 10px; } }
+  @media (max-width: 700px) { .mlegend { flex-wrap: wrap; justify-content: flex-start; gap: 2px 14px; } .mlegend .sep { display: none; } .lg { font-size: 12px; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="head">
-    <div class="eyebrow">Areas of Impact</div>
-    <h1>We Invest in People and the Community They Call Home</h1>
-    <p class="body">We intentionally limit our geographic focus to the Freedom-Wilkinson Corridor, allowing us to go deep and work holistically with local families. Partnering directly with our neighbors, we invest in essential infrastructure and opportunities across housing, childcare, education, employment, and wellness that lead to lasting family-centered community transformation across four key impact areas.</p>
-  </div>
   <div class="mapbox" data-screen-label="Map">
     <div id="map" role="application" aria-label="Map of the Freedom-Wilkinson Corridor and ZIP code 28208"></div>
     <div class="card" id="card" aria-live="polite"></div>
   </div>
-  <div class="mlegend" id="legend" style="margin-top:-16px"></div>
-  <div class="pillars" id="pillars" data-screen-label="Pillars"></div>
+  <div class="mlegend" id="legend"></div>
 </div>
 <div class="lb" id="lb"><img alt=""></div>
 
@@ -259,7 +251,7 @@ const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 
   // Project pins (rows with a photo get a larger, labeled pin)
   P.forEach(p => {
-    const big = p.big, sz = big ? 60 : 48;
+    const big = p.big, sz = big ? 70 : 58;
     p.marker = L.marker(p.ll, { icon: L.divIcon({ className: '', iconSize: [sz, sz], html: `<div class="off"><div class="pin${big ? ' big' : ''}"><img src="${p.cat.icon}" alt=""></div>${big ? `<div class="pinlabel">${esc(p.name.split('(')[0].trim().toUpperCase())}</div>` : ''}</div>` }), title: p.name, riseOnHover: true, zIndexOffset: big ? 1000 : 0 })
       .on('mouseover', () => { if (!sel && !selP) projCard(p); })
       .on('mouseout', () => { if (!sel && !selP) hideCard(); })
@@ -269,7 +261,7 @@ const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
   // Nudge pins that would sit on top of each other at the current zoom
   // Place each pin at the candidate spot (within ~1.5 icon widths) with the least overlap; pins weigh more than labels.
   const declutter = () => {
-    const far = map.getZoom() < 15, r = far ? 13 : 23, s = 2 * r + 2, cb = map.getContainer().getBoundingClientRect(), boxes = [];
+    const far = map.getZoom() < 15, r = far ? 20 : 30, s = 2 * r + 4, cb = map.getContainer().getBoundingClientRect(), boxes = [];
     const add = (x1, y1, x2, y2, w) => boxes.push({ x1, y1, x2, y2, w });
     const addEl = (e, w) => { const q = e.getBoundingClientRect(); if (q.width) add(q.left - cb.left, q.top - cb.top, q.right - cb.left, q.bottom - cb.top, w); };
     document.querySelectorAll('#map .shield, #map .zip-lbl').forEach(e => addEl(e, 1));
@@ -277,7 +269,7 @@ const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
       const ang = +((e.style.transform.match(/rotate\((-?[\d.]+)deg/) || [])[1] || 0) * Math.PI / 180, half = e.offsetWidth / 2, ox = Math.sin(ang) * 9, oy = -Math.cos(ang) * 9;
       for (let d = -half; d <= half; d += 10) { const x = cx + Math.cos(ang) * d, y = cy + Math.sin(ang) * d; add(x - 6, y - 7, x + 6, y + 7, 1); } });
     const ring = k => [0, 1, 2, 3, 4, 5, 6, 7].map(i => { const a = Math.PI / 2 + i * Math.PI / 4; return [Math.cos(a) * s * k, Math.sin(a) * s * k]; });
-    const CAND = [[0, 0], ...ring(1), ...ring(1.5)];
+    const CAND = [[0, 0], ...ring(1), ...ring(1.5), ...ring(2)];
     const cost = (x, y) => boxes.reduce((t, b) => { const ow = Math.min(x + r, b.x2) - Math.max(x - r, b.x1), oh = Math.min(y + r, b.y2) - Math.max(y - r, b.y1); return ow > 0 && oh > 0 ? t + ow * oh * b.w : t; }, 0);
     P.slice().sort((a, b) => b.big - a.big).forEach(p => {
       const el = p.marker.getElement()?.querySelector('.off'); if (!el) return;
@@ -315,18 +307,27 @@ const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
     selP = key; sel = null; applyFilter(); pillarCard(); fitPillar(); render();
   }
 
+  const SHORT = { family: 'Family Stability', youth: 'Youth & Education', employment: 'Employment', housing: 'Housing' };
   function render() {
     const pills = CATS.filter(c => c.pillar);
-    document.getElementById('legend').innerHTML = '<div class="lt">Legend</div>' + pills.map(c => `<button class="lg" data-k="${c.key}" aria-pressed="${selP === c.key}"><img src="${c.icon}" alt="">${esc(c.name)}</button>`).join('')
-      + `<div class="lg"><img src="${OFFICE_ICON}" alt="">Freedom Communities Offices</div><div class="lg"><span class="asw"></span>Freedom-Wilkinson Corridor</div><div class="lg"><span class="zsw"></span>ZIP code 28208</div>`;
-    const box = document.getElementById('pillars');
-    box.classList.toggle('has-sel', !!selP);
-    box.innerHTML = pills.map(c => `<div class="pillar" role="button" tabindex="0" data-k="${c.key}" aria-pressed="${selP === c.key}"><div class="ph"><img src="${c.icon}" alt=""><h2>${esc(c.name)}</h2></div><p>${esc(c.text)}</p>${c.link ? `<a href="${esc(c.link)}">Learn More</a>` : ''}</div>`).join('');
+    document.getElementById('legend').innerHTML = pills.map(c => `<button class="lg" data-k="${c.key}" aria-pressed="${selP === c.key}" title="${esc(c.name)}"><img src="${c.icon}" alt="">${esc(SHORT[c.slug] || c.name)}</button>`).join('')
+      + `<span class="sep"></span><div class="lg"><img src="${OFFICE_ICON}" alt="">Offices</div><div class="lg"><span class="asw"></span>Corridor</div><div class="lg"><span class="zsw"></span>28208</div>`;
+    if (window.parent !== window) window.parent.postMessage({ corridorMapSelected: selP ? CATS.find(c => c.key === selP).slug : 'all' }, '*');
     document.querySelectorAll('[data-k]').forEach(el => { el.onclick = e => { if (e.target.closest('a')) return; pickPillar(el.dataset.k); };
       el.onkeydown = e => { if (el.tagName !== 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickPillar(el.dataset.k); } }; });
   }
   const OFFICE_ICON = CATS.find(c => !c.pillar).icon;
   render();
+
+  // Outside control: Squarespace links (#map-housing) send a message; the map's own URL hash (#housing) also works.
+  const setPillar = slug => { slug = String(slug || '').replace(/^#?(map-)?/, '').toLowerCase();
+    const c = CATS.find(x => x.pillar && x.slug === slug);
+    if (c) { if (selP !== c.key) pickPillar(c.key); else if (sel) clearSel(); }
+    else if (slug === 'all') { if (selP) sel = null; if (sel || selP) clearSel(); } };
+  window.addEventListener('message', e => { if (e.data && e.data.corridorMap) setPillar(e.data.corridorMap); });
+  window.addEventListener('hashchange', () => setPillar(location.hash));
+  if (location.hash) setPillar(location.hash);
+  if (window.parent !== window) window.parent.postMessage({ corridorMapReady: true }, '*');
 })();
 </script>
 </body>
