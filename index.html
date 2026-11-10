@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freedom-Wilkinson Corridor Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="data/geo.js"></script>
+<script src="data/defaults.js"></script>
+<script src="data/overlays.js"></script>
+<script src="data/zip28208.js"></script>
+<script>
+/* ============ STAFF SETTINGS ============
+   Paste the Google Sheet's link between the quotes (Share → Anyone with the link → Viewer).
+   Leave as '' to use the built-in data instead.            */
+window.SHEET_URL = '';
+/* The four pillars: map legend + cards below the map. Add each "Learn More" link between the quotes. */
+window.PILLARS = [
+  { name: 'Family Stability & Wellbeing', icon: 'health', link: '',
+    text: 'Empowering families toward sustainable self-sufficiency through year-round coaching, skills workshops, and holistic wraparound support.' },
+  { name: 'Youth Development & Education', icon: 'education', link: '',
+    text: 'Advancing early literacy and academic success by bolstering teachers, expanding quality classrooms, and equipping families with key learning tools.' },
+  { name: 'Employment & Economic Empowerment', icon: 'employment', link: '',
+    text: 'Equipping local entrepreneurs with affordable workspaces, capital micro-grants, hands-on mentorship, and collaborative monthly trainings.' },
+  { name: 'Affordable Housing', icon: 'housing', link: '',
+    text: 'Building mixed-income residences, safeguarding existing affordable units, and opening pathways to homeownership.' }
+];
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Source Sans 3', sans-serif; color: #111; background: #fff; }
+  a { color: #0B5E8A; } a:hover { color: #F28200; }
+  .wrap { display: flex; flex-direction: column; gap: 28px; padding: 32px 24px; max-width: 1280px; margin: 0 auto; }
+  .head { display: flex; flex-direction: column; gap: 12px; max-width: 860px; }
+  .mapbox { position: relative; width: 100%; height: 640px; max-height: 80vh; border: 2px solid #111; border-radius: 16px; overflow: hidden; }
+  #map { position: absolute; inset: 0; background: #f2f2f2; }
+  .osm { filter: grayscale(1) contrast(.9) brightness(1.06); }
+  .far .pin { transform: scale(.55); } .far .pin.sel { transform: scale(.8); }
+  .far .pinlabel { top: auto; bottom: 80%; transform: translate(-50%, -4px); }
+  .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #555; }
+  h1 { margin: 0; font-size: 40px; line-height: 1.1; font-weight: 800; text-wrap: balance; }
+  .body { margin: 0; font-size: 19px; line-height: 1.5; color: #333; text-wrap: pretty; }
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .glabel { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #555; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .items { display: flex; flex-wrap: wrap; gap: 6px; }
+  .item { font: 600 15px 'Source Sans 3', sans-serif; padding: 6px 12px; min-height: 36px; border-radius: 999px; border: 2px solid #111; background: #fff; cursor: pointer; color: #111; }
+  .item[aria-current="true"] { background: #FFE2BF; }
+  .card { position: absolute; top: 12px; right: 12px; z-index: 500; width: min(330px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; background: #fff; border: 2px solid #111; border-radius: 12px; padding: 14px 16px; display: none; flex-direction: column; gap: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.15); }
+  .card.on { display: flex; }
+  .card .name { font-size: 20px; font-weight: 800; line-height: 1.15; }
+  .card .desc { font-size: 15px; line-height: 1.45; color: #222; white-space: pre-line; text-wrap: pretty; }
+  .card .photo { width: 100%; border-radius: 8px; border: 1px solid #ddd; cursor: zoom-in; display: block; }
+  .card .x { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: #f1f1f1; font: 700 18px/1 sans-serif; cursor: pointer; }
+  .pin { width: 48px; height: 48px; transition: transform .15s; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .pin img { width: 100%; height: 100%; object-fit: contain; }
+  .pin.big { width: 60px; height: 60px; }
+  .off { position: relative; width: 100%; height: 100%; transition: transform .2s; }
+  .shield { transform: translate(-50%, -50%); width: max-content; }
+  .area-lbl { transform: translate(-50%, -50%); width: max-content; font: 800 13px/1.2 'Source Sans 3', sans-serif; letter-spacing: .6px; text-transform: uppercase; text-align: center; color: #111; pointer-events: none; }
+  .road-lbl { position: absolute; left: 0; top: 0; width: max-content; font: 800 11px 'Source Sans 3', sans-serif; letter-spacing: .8px; text-transform: uppercase; color: #111; white-space: nowrap; pointer-events: none; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; }
+  .ci { width: 28px; height: 28px; object-fit: contain; flex: none; margin: -4px 0; }
+  .pin.sel { transform: scale(1.25); }
+  .pinlabel { font: 800 11px 'Source Sans 3', sans-serif; letter-spacing: .6px; white-space: nowrap; background: #fff; border: 1.5px solid #111; border-radius: 999px; padding: 1px 8px; position: absolute; left: 50%; top: 100%; transform: translate(-50%, 4px); }
+  .zip-lbl { transform: translate(-50%, -50%); width: max-content; font: 800 12px 'Source Sans 3', sans-serif; letter-spacing: .8px; color: #4B3A8F; background: #fff; border: 1.5px dashed #4B3A8F; border-radius: 999px; padding: 2px 10px; pointer-events: none; }
+  .mlegend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 16px; padding: 0 4px; }
+  .mlegend .lt { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #555; }
+  .lg { display: flex; align-items: center; gap: 6px; font: 600 13px/1.2 'Source Sans 3', sans-serif; color: #111; background: none; border: 0; padding: 2px 6px; margin: 0 -6px; border-radius: 6px; text-align: left; min-height: 30px; white-space: nowrap; }
+  button.lg { cursor: pointer; } button.lg:hover { background: #F4F4F4; } button.lg[aria-pressed="true"] { background: #FFE2BF; }
+  .lg img { width: 22px; height: 22px; object-fit: contain; flex: none; }
+  .zsw { width: 26px; height: 14px; border: 2px dashed #4B3A8F; border-radius: 3px; flex: none; }
+  .asw { width: 26px; height: 14px; border: 3px solid #F28200; background: rgba(242,130,0,.16); border-radius: 3px; flex: none; }
+  .pillars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .pillar { display: flex; flex-direction: column; gap: 12px; padding: 22px 20px; border: 2px solid #111; border-radius: 14px; background: #fff; cursor: pointer; transition: background .2s, opacity .2s, box-shadow .2s; }
+  .pillar:hover { background: #FAFAFA; }
+  .pillar:focus-visible { outline: 3px solid #0B5E8A; outline-offset: 2px; }
+  .pillar .ph { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+  .pillar img { width: 64px; height: 64px; object-fit: contain; }
+  .pillar h2 { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 800; text-wrap: balance; min-height: 2.4em; display: flex; align-items: center; }
+  .pillar p { margin: 0; font-size: 16px; line-height: 1.45; color: #333; text-wrap: pretty; flex: 1; }
+  .pillar a { font-weight: 700; align-self: flex-start; }
+  .pillar[aria-pressed="true"] { background: #FFF1DF; border-color: #F28200; box-shadow: inset 0 0 0 2px #F28200; }
+  .pillars.has-sel .pillar[aria-pressed="false"] { opacity: .45; }
+  .loclist { display: flex; flex-direction: column; gap: 6px; }
+  .back { align-self: flex-start; font: 700 14px 'Source Sans 3', sans-serif; color: #0B5E8A; background: none; border: 0; padding: 4px 0; cursor: pointer; }
+  .lb { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+  .lb.on { display: flex; } .lb img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+  .note { font-size: 13px; color: #666; }
+  @media (max-width: 960px) { .pillars { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 520px) { .pillars { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .wrap { padding: 16px 12px; gap: 20px; } h1 { font-size: 30px; } .mapbox { height: 72vh; } .mlegend { padding: 8px 10px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="eyebrow">Areas of Impact</div>
+    <h1>We Invest in People and the Community They Call Home</h1>
+    <p class="body">We intentionally limit our geographic focus to the Freedom-Wilkinson Corridor, allowing us to go deep and work holistically with local families. Partnering directly with our neighbors, we invest in essential infrastructure and opportunities across housing, childcare, education, employment, and wellness that lead to lasting family-centered community transformation across four key impact areas.</p>
+  </div>
+  <div class="mapbox" data-screen-label="Map">
+    <div id="map" role="application" aria-label="Map of the Freedom-Wilkinson Corridor and ZIP code 28208"></div>
+    <div class="card" id="card" aria-live="polite"></div>
+  </div>
+  <div class="mlegend" id="legend" style="margin-top:-16px"></div>
+  <div class="pillars" id="pillars" data-screen-label="Pillars"></div>
+</div>
+<div class="lb" id="lb"><img alt=""></div>
+
+<script>
+const STATUS = {
+  new: { label: 'New project', color: '#D2D33A' },
+  existing: { label: 'Existing project', color: '#A9CBEA' },
+  expansion: { label: 'Expansion project', color: '#F28200' },
+  future: { label: 'Future site', color: '#D2D33A' }
+};
+const OFFICE = { name: 'Freedom Communities Offices', icon: 'business', alias: ['offices', 'office', 'freedom communities office'] };
+const ALIAS = [['family stability', 'wellbeing', 'family'], ['education', 'schools', 'school', 'youth development'], ['employment', 'economic empowerment'], ['housing']];
+const CATS = [...window.PILLARS.map((p, i) => ({ ...p, alias: ALIAS[i] || [], pillar: true })), OFFICE]
+  .map((c, i) => ({ ...c, key: 'c' + i, label: c.name, icon: 'assets/icons/' + c.icon + '.png', keys: [c.name.toLowerCase(), ...c.alias] }));
+const findCat = s => { s = (s || '').trim().toLowerCase().replace(/\s+/g, ' '); return CATS.find(c => c.keys.includes(s)); };
+
+function parseCSV(t) {
+  const rows = []; let r = [], f = '', q = false;
+  t = t.replace(/\r/g, '');
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { r.push(f); f = ''; }
+    else if (c === '\n') { r.push(f); rows.push(r); r = []; f = ''; }
+    else f += c;
+  }
+  if (f || r.length) { r.push(f); rows.push(r); }
+  const head = rows.shift().map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  return rows.filter(x => x.some(v => v.trim())).map(x => Object.fromEntries(head.map((h, i) => [h, (x[i] || '').trim()])));
+}
+const shown = r => !r.show || !/^(n|no|false|0)$/i.test(r.show);
+async function load(name) {
+  const id = ((window.SHEET_URL || '').match(/\/d\/([\w-]+)/) || [])[1];
+  const url = id && `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${name}&t=${Date.now()}`;
+  if (url) {
+    try { const res = await fetch(url, { cache: 'no-store' }); if (res.ok) return parseCSV(await res.text()); } catch (e) {}
+    console.warn('Could not load sheet for', name, '- using built-in data.');
+  }
+  return parseCSV(window.CORRIDOR_DEFAULTS[name]);
+}
+// Rows with an address but no lat/lng get looked up once per browser (the Sheet's script normally fills these in).
+async function geocode(rows) {
+  for (const p of rows) {
+    if ((p.lat && p.lng) || !p.address) continue;
+    const key = 'fwc-geo:' + p.address.toLowerCase();
+    let hit = localStorage.getItem(key);
+    if (!hit) {
+      try { const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' + encodeURIComponent(p.address)); const j = await r.json();
+        if (j[0]) { hit = j[0].lat + ',' + j[0].lon; localStorage.setItem(key, hit); } } catch (e) {}
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    if (hit) [p.lat, p.lng] = hit.split(',');
+  }
+  return rows;
+}
+const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+(async function () {
+  const projects = await load('projects');
+  await geocode(projects.filter(shown));
+  const P = projects.filter(shown).filter(p => p.lat && p.lng && p.name && findCat(p.category)).map((p, i) => ({ ...p, id: 'p' + i, cat: findCat(p.category), st: STATUS[(p.status || '').trim().toLowerCase()], ll: [+p.lat, +p.lng], big: !!p.photo_url }));
+
+  const mapEl = document.getElementById('map');
+  while (!(mapEl.clientWidth > 0 && mapEl.clientHeight > 0)) await new Promise(r => setTimeout(r, 50));
+  const map = window.corridorMap = L.map('map', { zoomSnap: 0.5, scrollWheelZoom: false });
+  map.on('focus', () => map.scrollWheelZoom.enable());
+  map.on('blur', () => map.scrollWheelZoom.disable());
+
+  // Simplified base (keyless): Esri light gray canvas drawn one zoom lower shows only highways and main roads.
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+  const simple = L.layerGroup([
+    L.tileLayer(ESRI + 'World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { tileSize: 512, zoomOffset: -1, maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors' }),
+    L.tileLayer(ESRI + 'World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 16 })
+  ]);
+  const detail = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors', className: 'osm' });
+  const DETAIL_ZOOM = 15.5;
+  const syncBase = () => { const d = map.getZoom() >= DETAIL_ZOOM; mapEl.classList.toggle('far', map.getZoom() < 15);
+    if (d && !map.hasLayer(detail)) { detail.addTo(map); simple.remove(); }
+    if (!d && !map.hasLayer(simple)) { simple.addTo(map); detail.remove(); } };
+  map.on('zoomend', syncBase);
+
+  const G = window.CORRIDOR_GEO;
+  map.createPane('areas').style.zIndex = 350;
+  map.createPane('roads').style.zIndex = 420;
+  map.createPane('roadlabels').style.zIndex = 450;
+  const OV = window.CORRIDOR_OVERLAYS;
+  const areaBounds = L.latLngBounds([]);
+  OV.areas.forEach(ar => {
+    const pg = L.polygon(ar.ring, { pane: 'areas', color: '#fff', weight: 2, fillColor: '#E4E1F5', fillOpacity: 0.85, interactive: false }).addTo(map);
+    areaBounds.extend(ar.labelAt);
+    L.marker(ar.labelAt, { pane: 'roadlabels', interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: null, html: `<div class="area-lbl">${esc(ar.name).replace(' ', '<br>')}</div>` }) }).addTo(map);
+  });
+  const aoi = L.geoJSON(G.aoi, { style: { color: '#F28200', weight: 3, fillColor: '#F28200', fillOpacity: 0.16 }, interactive: false }).addTo(map);
+  map.createPane('zip').style.zIndex = 410;
+  if (window.ZIP_28208) {
+    L.polygon(window.ZIP_28208, { pane: 'zip', color: '#4B3A8F', weight: 2, dashArray: '6 5', fill: false, interactive: false }).addTo(map);
+    L.marker([35.2715, -80.9045], { pane: 'roadlabels', interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: null, html: '<div class="zip-lbl">ZIP 28208</div>' }) }).addTo(map);
+  }
+  const shieldSVG = (n, t) => t === 'us'
+    ? `<svg width="30" height="26" viewBox="0 0 30 26"><path d="M3 2h24c1 6 0 14-12 22C3 16 2 8 3 2z" fill="#fff" stroke="#111" stroke-width="2"/><text x="15" y="15" text-anchor="middle" font-family="Source Sans 3" font-weight="800" font-size="12">${n}</text></svg>`
+    : `<svg width="${n.length > 2 ? 34 : 28}" height="28" viewBox="0 0 ${n.length > 2 ? 34 : 28} 28"><path d="M2 3c4 2 ${n.length > 2 ? 26 : 20} 2 ${n.length > 2 ? 30 : 24} 0 2 9 1 18-${n.length > 2 ? 15 : 12} 23C3 21 0 12 2 3z" fill="#fff" stroke="#111" stroke-width="2"/><text x="${n.length > 2 ? 17 : 14}" y="17" text-anchor="middle" font-family="Source Sans 3" font-weight="800" font-size="12">${n}</text></svg>`;
+  const roadLabels = [];
+  const rw = r => r.kind === 'interstate' ? 4 : 3;
+  // casings first, then all gray lines, so crossings and joins read as one network
+  OV.roads.forEach(r => L.polyline(r.line, { pane: 'roads', color: '#fff', weight: rw(r) + 3, opacity: 1, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(map));
+  OV.roads.forEach(r => L.polyline(r.line, { pane: 'roads', color: '#777', weight: rw(r), opacity: 1, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(map));
+  OV.roads.forEach(r => {
+    if (r.shield) L.marker(r.shieldAt, { pane: 'roadlabels', interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: null, html: `<div class="shield">${shieldSVG(r.shield, r.shieldType)}</div>` }) }).addTo(map);
+    if (r.labelAt != null) { const m = L.marker(r.line[r.labelAt], { pane: 'roadlabels', interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="road-lbl">${esc(r.name)}</div>` }) }).addTo(map); roadLabels.push({ m, r }); }
+  });
+  const arrows = [];
+  OV.roads.forEach(r => (r.arrows || []).forEach(end => {
+    const tip = end === 'end' ? r.line[r.line.length - 1] : r.line[0];
+    arrows.push({ r, end, m: L.marker(tip, { pane: 'roads', interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: '<svg width="16" height="14" viewBox="0 0 16 14" style="position:absolute;left:-8px;top:-7px;overflow:visible"><path d="M2 2 L13 7 L2 12" fill="none" stroke="#777" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' }) }).addTo(map) });
+  }));
+  // walk along the line ~px screen pixels from point i, in direction dir
+  const walk = (line, i, dir, px) => { const a = map.latLngToLayerPoint(line[i]); let j = i;
+    while (j + dir >= 0 && j + dir < line.length) { j += dir; if (map.latLngToLayerPoint(line[j]).distanceTo(a) >= px) break; } return map.latLngToLayerPoint(line[j]); };
+  const orientLabels = () => {
+    roadLabels.forEach(({ m, r }) => {
+      const p1 = walk(r.line, r.labelAt, -1, 45), p2 = walk(r.line, r.labelAt, 1, 45);
+      let ang = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+      const el = m.getElement()?.firstChild; if (el) el.style.transform = `translate(-50%,-50%) rotate(${ang}deg) translateY(-9px)`;
+    });
+    arrows.forEach(({ r, end, m }) => {
+      const n = r.line.length, tip = map.latLngToLayerPoint(end === 'end' ? r.line[n - 1] : r.line[0]);
+      const back = walk(r.line, end === 'end' ? n - 1 : 0, end === 'end' ? -1 : 1, 20);
+      const ang = Math.atan2(tip.y - back.y, tip.x - back.x) * 180 / Math.PI;
+      const el = m.getElement()?.querySelector('svg'); if (el) el.style.transform = `rotate(${ang}deg)`;
+    });
+  };
+  map.on('zoomend', orientLabels);
+  const aoiBounds = aoi.getBounds().extend(areaBounds);
+  P.forEach(p => aoiBounds.extend(p.ll));
+  const fitAOI = () => { map.invalidateSize(); map.fitBounds(aoiBounds, { padding: [20, 20], maxZoom: 15 }); };
+  fitAOI(); syncBase(); orientLabels();
+  let userMoved = false;
+  map.on('dragstart zoomstart', () => { if (map._userAct) userMoved = true; });
+  map.getContainer().addEventListener('pointerdown', () => map._userAct = true);
+  map.getContainer().addEventListener('wheel', () => map._userAct = true);
+  new ResizeObserver(() => { const el = map.getContainer(); if (!el.clientWidth || !el.clientHeight) return; map.invalidateSize(); if (!userMoved && !sel && !selP) fitAOI(); }).observe(mapEl);
+
+  const card = document.getElementById('card');
+  let sel = null, selP = null;
+  const showCard = html => { card.innerHTML = '<button class="x" aria-label="Close">×</button>' + html; card.classList.add('on'); card.querySelector('.x').onclick = clearSel;
+    const im = card.querySelector('.photo'); if (im) im.onclick = () => { const lb = document.getElementById('lb'); lb.querySelector('img').src = im.src; lb.classList.add('on'); }; };
+  const hideCard = () => card.classList.remove('on');
+  document.getElementById('lb').onclick = e => e.currentTarget.classList.remove('on');
+
+  // Project pins (rows with a photo get a larger, labeled pin)
+  P.forEach(p => {
+    const big = p.big, sz = big ? 60 : 48;
+    p.marker = L.marker(p.ll, { icon: L.divIcon({ className: '', iconSize: [sz, sz], html: `<div class="off"><div class="pin${big ? ' big' : ''}"><img src="${p.cat.icon}" alt=""></div>${big ? `<div class="pinlabel">${esc(p.name.split('(')[0].trim().toUpperCase())}</div>` : ''}</div>` }), title: p.name, riseOnHover: true, zIndexOffset: big ? 1000 : 0 })
+      .on('mouseover', () => { if (!sel && !selP) projCard(p); })
+      .on('mouseout', () => { if (!sel && !selP) hideCard(); })
+      .on('click', () => pickP(p))
+      .addTo(map);
+  });
+  // Nudge pins that would sit on top of each other at the current zoom
+  // Place each pin at the candidate spot (within ~1.5 icon widths) with the least overlap; pins weigh more than labels.
+  const declutter = () => {
+    const far = map.getZoom() < 15, r = far ? 13 : 23, s = 2 * r + 2, cb = map.getContainer().getBoundingClientRect(), boxes = [];
+    const add = (x1, y1, x2, y2, w) => boxes.push({ x1, y1, x2, y2, w });
+    const addEl = (e, w) => { const q = e.getBoundingClientRect(); if (q.width) add(q.left - cb.left, q.top - cb.top, q.right - cb.left, q.bottom - cb.top, w); };
+    document.querySelectorAll('#map .shield, #map .zip-lbl').forEach(e => addEl(e, 1));
+    roadLabels.forEach(({ m }) => { const e = m.getElement()?.firstChild; if (!e) return; const q = e.getBoundingClientRect(), cx = (q.left + q.right) / 2 - cb.left, cy = (q.top + q.bottom) / 2 - cb.top;
+      const ang = +((e.style.transform.match(/rotate\((-?[\d.]+)deg/) || [])[1] || 0) * Math.PI / 180, half = e.offsetWidth / 2, ox = Math.sin(ang) * 9, oy = -Math.cos(ang) * 9;
+      for (let d = -half; d <= half; d += 10) { const x = cx + Math.cos(ang) * d, y = cy + Math.sin(ang) * d; add(x - 6, y - 7, x + 6, y + 7, 1); } });
+    const ring = k => [0, 1, 2, 3, 4, 5, 6, 7].map(i => { const a = Math.PI / 2 + i * Math.PI / 4; return [Math.cos(a) * s * k, Math.sin(a) * s * k]; });
+    const CAND = [[0, 0], ...ring(1), ...ring(1.5)];
+    const cost = (x, y) => boxes.reduce((t, b) => { const ow = Math.min(x + r, b.x2) - Math.max(x - r, b.x1), oh = Math.min(y + r, b.y2) - Math.max(y - r, b.y1); return ow > 0 && oh > 0 ? t + ow * oh * b.w : t; }, 0);
+    P.slice().sort((a, b) => b.big - a.big).forEach(p => {
+      const el = p.marker.getElement()?.querySelector('.off'); if (!el) return;
+      const pt = map.latLngToContainerPoint(p.ll); let best = [0, 0], bc = Infinity;
+      for (const [dx, dy] of CAND) { const c = cost(pt.x + dx, pt.y + dy) + Math.hypot(dx, dy) * 2; if (c < bc) { bc = c; best = [dx, dy]; } if (c === 0) break; }
+      el.style.transition = 'none'; el.style.transform = `translate(${Math.round(best[0])}px,${Math.round(best[1])}px)`;
+      const x = pt.x + best[0], y = pt.y + best[1]; add(x - r, y - r, x + r, y + r, 20);
+      const lb = el.querySelector('.pinlabel'); if (lb) addEl(lb, 20);
+    });
+  };
+  map.on('zoomend', declutter); declutter();
+  const projCard = p => { showCard(`${selP ? '<button class="back">← All locations</button>' : ''}<div class="glabel"><img class="ci" src="${p.cat.icon}" alt="">${esc(p.cat.label)}${p.st ? ' · ' + p.st.label : ''}</div><div class="name">${esc(p.name)}</div>${p.address ? `<div class="note">${esc(p.address)}</div>` : ''}${p.photo_url ? `<img class="photo" src="${esc(p.photo_url)}" alt="${esc(p.name)}">` : ''}${p.description ? `<div class="desc">${esc(p.description)}</div>` : ''}`);
+    const b = card.querySelector('.back'); if (b) b.onclick = () => { sel = null; markSel(); pillarCard(); fitPillar(); }; };
+  const markSel = () => P.forEach(x => x.marker.getElement()?.querySelector('.pin').classList.toggle('sel', x.id === sel));
+  const inP = () => P.filter(p => p.cat.key === selP);
+  const fitPillar = () => { const b = L.latLngBounds(inP().map(p => p.ll)); if (b.isValid()) map.flyToBounds(b, { paddingTopLeft: [70, 70], paddingBottomRight: [70, 70], maxZoom: 14.5, duration: 0.8 }); };
+  const pillarCard = () => { const c = CATS.find(x => x.key === selP), items = inP();
+    showCard(`<div class="glabel"><img class="ci" src="${c.icon}" alt="">${esc(c.name)}</div><div class="note">${items.length} location${items.length === 1 ? '' : 's'} in the corridor</div><div class="loclist">${items.map(p => `<button class="item" data-p="${p.id}">${esc(p.name)}</button>`).join('')}</div>`);
+    card.querySelectorAll('[data-p]').forEach(b => b.onclick = () => pickP(P.find(x => x.id === b.dataset.p))); };
+  const applyFilter = () => { P.forEach(p => { const on = !selP || p.cat.key === selP; if (on && !map.hasLayer(p.marker)) p.marker.addTo(map); if (!on) p.marker.remove(); }); markSel(); declutter(); };
+  map.on('moveend', () => { if (selP) declutter(); });
+
+  function clearSel() {
+    if (sel && selP) { sel = null; markSel(); pillarCard(); fitPillar(); return; }
+    const had = sel || selP; sel = null; selP = null; hideCard(); applyFilter(); render();
+    if (had) { userMoved = false; map._userAct = false; map.flyToBounds(aoiBounds, { padding: [20, 20], maxZoom: 15, duration: 0.8 }); }
+  }
+  function pickP(p) {
+    if (sel === p.id) { clearSel(); return; }
+    sel = p.id; projCard(p); markSel();
+    map.flyTo(p.ll, Math.max(map.getZoom(), 16.5), { duration: 0.8 });
+  }
+  function pickPillar(key) {
+    if (selP === key) { sel = null; clearSel(); return; }
+    selP = key; sel = null; applyFilter(); pillarCard(); fitPillar(); render();
+  }
+
+  function render() {
+    const pills = CATS.filter(c => c.pillar);
+    document.getElementById('legend').innerHTML = '<div class="lt">Legend</div>' + pills.map(c => `<button class="lg" data-k="${c.key}" aria-pressed="${selP === c.key}"><img src="${c.icon}" alt="">${esc(c.name)}</button>`).join('')
+      + `<div class="lg"><img src="${OFFICE_ICON}" alt="">Freedom Communities Offices</div><div class="lg"><span class="asw"></span>Freedom-Wilkinson Corridor</div><div class="lg"><span class="zsw"></span>ZIP code 28208</div>`;
+    const box = document.getElementById('pillars');
+    box.classList.toggle('has-sel', !!selP);
+    box.innerHTML = pills.map(c => `<div class="pillar" role="button" tabindex="0" data-k="${c.key}" aria-pressed="${selP === c.key}"><div class="ph"><img src="${c.icon}" alt=""><h2>${esc(c.name)}</h2></div><p>${esc(c.text)}</p>${c.link ? `<a href="${esc(c.link)}">Learn More</a>` : ''}</div>`).join('');
+    document.querySelectorAll('[data-k]').forEach(el => { el.onclick = e => { if (e.target.closest('a')) return; pickPillar(el.dataset.k); };
+      el.onkeydown = e => { if (el.tagName !== 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickPillar(el.dataset.k); } }; });
+  }
+  const OFFICE_ICON = CATS.find(c => !c.pillar).icon;
+  render();
+})();
+</script>
+</body>
+</html>
